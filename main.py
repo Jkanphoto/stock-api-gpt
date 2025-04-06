@@ -1,24 +1,49 @@
 from fastapi import FastAPI
-import requests, time
+import requests
+import time
 
 app = FastAPI()
-FINNHUB_API_KEY = "cvmrlv9r01ql90pvrht0cvmrlv9r01ql90pvrhtg"  # Replace this with your actual key
+
+POLYGON_API_KEY = "TPRWamRgcZ5CH00kfkRXx163NqMvb2nl"
 
 @app.get("/get_price")
 def get_price(symbol: str = "NVDA"):
-    url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_API_KEY}"
-    r = requests.get(url).json()
-    return {"symbol": symbol, "price": r.get("c"), "high": r.get("h"), "low": r.get("l"), "previous_close": r.get("pc")}
+    url = f"https://api.polygon.io/v2/last/trade/stocks/{symbol}?apiKey={POLYGON_API_KEY}"
+    response = requests.get(url)
+    data = response.json()
+    return {
+        "symbol": symbol,
+        "price": data.get("results", {}).get("p"),
+        "timestamp": data.get("results", {}).get("t")
+    }
 
 @app.get("/get_candles")
-def get_candles(symbol: str = "NVDA", resolution: str = "1", count: int = 20):
+def get_candles(symbol: str = "NVDA", timespan: str = "minute", limit: int = 20):
     now = int(time.time())
-    seconds = {"1":60, "5":300, "15":900, "D":86400}
-    start = now - count * seconds.get(resolution, 60)
-    url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution={resolution}&from={start}&to={now}&token={FINNHUB_API_KEY}"
-    r = requests.get(url).json()
-    if r.get("s") != "ok":
-        return {"error": r}
-    return {"symbol": symbol, "resolution": resolution, "count": len(r["t"]),
-            "candles": [{"time": t, "open": o, "high": h, "low": l, "close": c, "volume": v}
-                        for t, o, h, l, c, v in zip(r["t"], r["o"], r["h"], r["l"], r["c"], r["v"])]}
+    start = now - 60 * 60  # 1 hour ago
+
+    url = (
+        f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/{timespan}/{start*1000}/{now*1000}"
+        f"?adjusted=true&sort=desc&limit={limit}&apiKey={POLYGON_API_KEY}"
+    )
+    response = requests.get(url)
+    data = response.json()
+
+    if "results" not in data:
+        return {"error": data}
+
+    candles = [
+        {
+            "time": c["t"],
+            "open": c["o"],
+            "high": c["h"],
+            "low": c["l"],
+            "close": c["c"],
+            "volume": c["v"]
+        } for c in data["results"]
+    ]
+
+    return {
+        "symbol": symbol,
+        "candles": candles
+    }
